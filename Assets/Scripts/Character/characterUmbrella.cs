@@ -42,7 +42,11 @@ public class characterUmbrella : MonoBehaviour
     private bool umbrellaActive;
     private bool attackUmbrellaActive;
     private bool dashActive;
-    private bool dashUsedThisAir;
+
+    [SerializeField, Tooltip("-1은 무제한, 0 이상은 허용 대시 수")]
+    private int maxAirDashes = -1;
+    private int airDashesUsed = 0;
+    
     private float umbrellaTimer;
     private float dashTimer;
     private bool dashAnimationPlaying;
@@ -145,17 +149,19 @@ public class characterUmbrella : MonoBehaviour
     {
         if (grounded)
         {
-            dashUsedThisAir = false;
+            airDashesUsed = 0; // 땅 밟으면 공중 대시 횟수 리셋
         }
     }
+
 
     public void ForceClose()
     {
         umbrellaTimer = 0f;
         SetUmbrellaActive(false);
         SetAttackUmbrellaActive(false);
-        StopDash();
-        dashUsedThisAir = false;
+        StopDash();                 // 대시 상태/타이머 초기화
+        airDashesUsed = 0;          // 공중 대시 사용 횟수 리셋 (dashUsedThisAir 대체)
+    
         if (dashVisualRoutine != null)
         {
             StopCoroutine(dashVisualRoutine);
@@ -167,6 +173,7 @@ public class characterUmbrella : MonoBehaviour
         }
         UpdateUmbrellaVisuals();
     }
+
 
     private void SetUmbrellaActive(bool active)
     {
@@ -233,25 +240,36 @@ public class characterUmbrella : MonoBehaviour
 
     public bool TryStartDash(float horizontalDirection, bool isGrounded, Rigidbody2D body, bool forceUpwards, bool hasHorizontalInput)
     {
-        if (dashActive || umbrellaActive || attackUmbrellaActive)
+        if (dashActive)
         {
             return false;
         }
 
-        if (!isGrounded && dashUsedThisAir)
+        // 글라이드/공격 우산이 켜져 있으면 끄고 대시로 전환
+        if (umbrellaActive)
         {
-            return false;
+            SetUmbrellaActive(false);
+            umbrellaTimer = 0f;
+        }
+        if (attackUmbrellaActive)
+        {
+            SetAttackUmbrellaActive(false);
         }
 
+        // 공중 대시 횟수 체크
+        if (!isGrounded)
+        {
+            if (maxAirDashes >= 0 && airDashesUsed >= maxAirDashes)
+            {
+                return false; // 허용 횟수 소진
+            }
+        }
+
+        // 지상에서 강제 위부스트는 대시로 세지지 않음(그대로 유지)
         if (isGrounded && forceUpwards && jumpScript != null)
         {
-            // 일반 점프와 중복 방지를 위해 잠깐 dashActive 설정
-            dashActive = true;
-            dashTimer = 0f;
-            dashUsedThisAir = false;
-
             PerformGroundedUmbrellaBoost();
-            ShowDashUmbrellaVisual(true, dashDuration);
+            ShowDashUmbrellaVisual(true, 0.15f);
             return true;
         }
 
@@ -267,8 +285,13 @@ public class characterUmbrella : MonoBehaviour
         dashTimer = 0f;
         dashActive = true;
         dashAnimationPlaying = true;
-        dashUsedThisAir = !isGrounded;
         dashBody = body;
+
+        // 공중에서 시작했다면 사용 횟수 증가
+        if (!isGrounded)
+        {
+            airDashesUsed++;
+        }
 
         ShowDashUmbrellaVisual(forceUpwards, 0f);
 

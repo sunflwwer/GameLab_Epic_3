@@ -7,7 +7,7 @@ public class ResetPosition : MonoBehaviour
     {
         if (other.CompareTag("Player"))
         {
-            other.transform.position = new Vector3(190, 22, 0);
+            other.transform.position = new Vector3(-68, -3, 0);
         }
     }
 }
