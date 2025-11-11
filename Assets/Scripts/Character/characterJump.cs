@@ -89,44 +89,32 @@ public class characterJump : MonoBehaviour
                 umbrellaController.ReleaseAttackUmbrella();
             }
             
-            // ↓ 홀드: 공격 중에는 ↓우산 재진입 금지
+            // 1) 좌클릭(공격)을 먼저 처리: ↓우산은 끊고 공격만 유지
+            if (!swingLocked && umbrellaController != null && inputManager.ConsumeUmbrellaAction())
+            {
+                if (umbrellaController.IsDownPoseActive)
+                    umbrellaController.EndDownPose();
+
+                umbrellaController.TryTriggerAttackUmbrella();  // 공격만
+                umbrellaActionConsumed = true;                  // ← 이 프레임엔 ↓우산 재진입 금지 플래그
+            }
+
+            // 2) S키로 ↓우산 유지 (단, 이 프레임에 공격을 눌렀거나 공격중이면 진입 금지)
             if (umbrellaController != null)
             {
-                if (inputManager.moveInput.y < -0.5f)
+                bool attackOn = umbrellaController.AttackUmbrellaActive; // 공격 우산 켜졌는지
+                bool blockDownPoseThisFrame = umbrellaActionConsumed || attackOn;
+
+                if (!blockDownPoseThisFrame && Input.GetKey(KeyCode.S))
                 {
-                    // 공격 중이면 ↓우산 시작하지 않음
-                    if (!umbrellaController.AttackUmbrellaActive)
-                    {
-                        if (!downBoostUsedInThisPress)
-                        {
-                            umbrellaController.BeginDownPose();   // 처음 한 번만 살짝 점프
-                            downBoostUsedInThisPress = true;
-                        }
-                        else
-                        {
-                            if (!umbrellaController.IsDownPoseActive)
-                                umbrellaController.BeginDownPose();
-                        }
-                    }
+                    if (!umbrellaController.IsDownPoseActive)
+                        umbrellaController.BeginDownPose();
                 }
                 else
                 {
                     if (umbrellaController.IsDownPoseActive)
                         umbrellaController.EndDownPose();
-
-                    downBoostUsedInThisPress = false;
                 }
-            }   
-
-
-            // 좌클릭(공격) 입력: 먼저 ↓우산을 끊고 공격만 실행
-            if (!swingLocked && umbrellaController != null && inputManager.ConsumeUmbrellaAction())
-            {
-                if (umbrellaController.IsDownPoseActive)
-                    umbrellaController.EndDownPose();           // ← 핵심: 아래우산 해제
-
-                umbrellaController.TryTriggerAttackUmbrella();  // 공격만
-                umbrellaActionConsumed = true;
             }
 
             // Modified old dash logic
@@ -163,24 +151,14 @@ public class characterJump : MonoBehaviour
             }
             else
             {
-                // ↓-포즈 중에도 점프가 되도록: 먼저 포즈 해제
-                // ↓-포즈 중에도 점프가 되도록: 먼저 포즈 해제
-                if (umbrellaController != null && umbrellaController.IsDownPoseActive)
-                {
-                    umbrellaController.EndDownPose();
-                }
+                // ↓우산 끝 접지 상태면 점프를 시도만 함(소모는 하지 않음)
+                bool canDownPoseJump = umbrellaController != null && umbrellaController.CanDownPoseJump();
 
-                // 지상이라면(혹시나) 부스트 블록 해제
-                if (onGround) umbrellaBoostJumpBlocked = false;
-
-                if (!umbrellaBoostJumpBlocked)
-                {
-                    desiredJump = true;
-                }
+                desiredJump = true; // 어떤 경우든 점프 시도 플래그만 세움
+                // 소모는 DoAJump()에서 실제 점프가 성사될 때 수행
             }
         }
-
-
+        
         // 우산 부스트 점프 블록 타이머 업데이트
         if (umbrellaBoostJumpBlocked)
         {
@@ -339,23 +317,28 @@ public class characterJump : MonoBehaviour
             }
         }
 
-        //Else if going down...
         else if (body.linearVelocity.y < -0.01f)
         {
-
             if (onGround)
-            //Don't change it if Kit is stood on something (such as a moving platform)
             {
                 gravMultiplier = defaultGravityScale;
             }
             else
             {
-                bool umbrellaActive = umbrellaController != null && umbrellaController.IsActive;
-                //Otherwise, apply the downward gravity multiplier as Kit comes back to Earth
-                gravMultiplier = umbrellaActive ? umbrellaController.GlideGravityMultiplier : downwardMovementMultiplier;
+                bool dashActive = umbrellaController != null && umbrellaController.IsDashActive;
+                if (dashActive)
+                {
+                    // ▼ 공중 대시 중: 글라이드보다 약간 큰 배율로 천천히 하강
+                    gravMultiplier = umbrellaController.DashFallGravityMultiplier;
+                }
+                else
+                {
+                    bool umbrellaActive = umbrellaController != null && umbrellaController.IsActive;
+                    gravMultiplier = umbrellaActive ? umbrellaController.GlideGravityMultiplier : downwardMovementMultiplier;
+                }
             }
-
         }
+
         //Else not moving vertically at all
         else
         {
@@ -374,52 +357,45 @@ public class characterJump : MonoBehaviour
 
     private void DoAJump()
     {
+        bool allowDownPoseJump = umbrellaController != null && umbrellaController.CanDownPoseJump();
 
-        //Create the jump, provided we are on the ground, in coyote time, or have a double jump available
-        if (onGround || (coyoteTimeCounter > 0.03f && coyoteTimeCounter < coyoteTime) || canJumpAgain)
+        if (onGround || allowDownPoseJump || (coyoteTimeCounter > 0.03f && coyoteTimeCounter < coyoteTime) || canJumpAgain)
         {
+            // ↓우산 점프면 소모 처리
+            if (allowDownPoseJump && umbrellaController != null)
+            {
+                umbrellaController.MarkDownPoseJumpUsed();
+            }
+
             desiredJump = false;
             jumpBufferCounter = 0;
             coyoteTimeCounter = 0;
 
-            if (onGround)
+            if (onGround || allowDownPoseJump) velocity.y = 0f;
+
+            // ★ 핵심: ↓우산 상태 '첫 점프'에만 배율 적용
+            float usedJumpHeight = jumpHeight;
+            if (allowDownPoseJump && umbrellaController != null && umbrellaController.IsSuperJumpAvailable)
             {
-                //Clear out any residual downward velocity so buffered inputs don't stack jump force.
-                velocity.y = 0f;
+                usedJumpHeight = jumpHeight * umbrellaController.DownPoseJumpMultiplier;
+                umbrellaController.ConsumeSuperJump();  // 한 번만
             }
 
-            //If we have double jump on, allow us to jump again (but only once)
-            canJumpAgain = (maxAirJumps == 1 && canJumpAgain == false);
+            float baseGravity = (-2f * usedJumpHeight) / (timeToJumpApex * timeToJumpApex);
+            jumpSpeed = Mathf.Sqrt(-2f * baseGravity * usedJumpHeight);
 
-            //Determine the power of the jump, based purely on jump stats (ignore current gravity scale so buffered landings can't inflate the jump)
-            float baseGravity = (-2f * jumpHeight) / (timeToJumpApex * timeToJumpApex);
-            jumpSpeed = Mathf.Sqrt(-2f * baseGravity * jumpHeight);
+            if (velocity.y > 0f) jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
 
-            //If Kit is moving up or down when she jumps (such as when doing a double jump), change the jumpSpeed;
-            //This will ensure the jump is the exact same strength, no matter your velocity.
-            if (velocity.y > 0f)
-            {
-                jumpSpeed = Mathf.Max(jumpSpeed - velocity.y, 0f);
-            }
-
-            //Apply the new jumpSpeed to the velocity. It will be sent to the Rigidbody in FixedUpdate;
             velocity.y = jumpSpeed;
-
             currentlyJumping = true;
 
-            if (juice != null)
-            {
-                //Apply the jumping effects on the juice script
-                juice.jumpEffects();
-            }
+            if (juice != null) juice.jumpEffects();
         }
 
-        if (jumpBuffer == 0)
-        {
-            //If we don't have a jump buffer, then turn off desiredJump immediately after hitting jumping
-            desiredJump = false;
-        }
+        if (jumpBuffer == 0) desiredJump = false;
+
     }
+    
 
     public void bounceUp(float bounceAmount)
     {

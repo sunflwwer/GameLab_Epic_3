@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using UnityEngine;
 
@@ -19,6 +20,16 @@ public class characterUmbrella : MonoBehaviour
     [SerializeField, Tooltip("Gravity multiplier to use while gliding downward")] private float glideGravityMultiplier = 0.05f;
     [SerializeField, Tooltip("Maximum downward speed while gliding (units per second)")] private float glideFallSpeedCap = 2.5f;
 
+    // 공중 대시 중 낙하 제어
+    [Header("Dash Fall (Air)")]
+    [SerializeField, Tooltip("공중 대시 중 적용할 낙하 중력 배율(글라이드보다 조금 크게)")]
+    private float aerialDashFallGravityMultiplier = 0.20f;   // 예: 글라이드 0.05보다 큼
+    [SerializeField, Tooltip("공중 대시 중 최대 낙하 속도(0이면 비활성)")]
+    private float aerialDashFallSpeedCap = 4.0f;             // 예: 글라이드 캡(2.5)보다 큼
+
+    public float DashFallGravityMultiplier => aerialDashFallGravityMultiplier;
+    public float DashFallSpeedCap => aerialDashFallSpeedCap;
+    
     [Header("Dash Settings")]
     [SerializeField, Tooltip("Animation delay before dash starts")] private float dashAnimationDelay = 0.12f;
     [SerializeField, Tooltip("Total time the umbrella dash lasts")] private float dashDuration = 0.35f;
@@ -32,13 +43,26 @@ public class characterUmbrella : MonoBehaviour
     [Header("Grounded Down Dash Jump")]
     [SerializeField, Tooltip("Jump height multiplier for grounded down dash (based on normal jump height)")] private float groundedDownDashJumpMultiplier = 2.5f;
     [SerializeField, Tooltip("Maximum Y velocity for grounded down dash jump (0 to disable)")] private float groundedDownDashMaxVelocity = 25f;
-
+    public float DownPoseJumpMultiplier => groundedDownDashJumpMultiplier;
+    
+    // ↓우산 상태에서 첫 점프에만 배율 적용하기 위한 플래그
+    private bool superJumpAvailable = false;
+    public bool IsSuperJumpAvailable => downPoseActive && superJumpAvailable;
+    public void ConsumeSuperJump() { superJumpAvailable = false; }
+    
     [Header("Dash Visuals")]
     [SerializeField] private Vector3 dashUmbrellaDefaultPosition = new Vector3(-1f, 0f, 0f);
     [SerializeField] private Vector3 dashUmbrellaDefaultRotation = new Vector3(0f, 0f, 90f);
     [SerializeField] private Vector3 dashUmbrellaDownPosition = new Vector3(0f, -1f, 0f);
     [SerializeField] private Vector3 dashUmbrellaDownRotation = new Vector3(0f, 0f, 180f);
+    
+    [Header("DownPose Ground")]
+    [SerializeField] private UmbrellaGround umbrellaGroundSensor; // MOD: ↓우산 끝 접지 센서 참조
+    private bool downPoseJumpUsed = false;                        // MOD: 접지 중 1회 점프 소모 플래그
+    private bool prevTouching = false;                            // MOD: 접지 전프레임 상태
 
+    public bool IsUmbrellaTouchingGround => umbrellaGroundSensor != null && umbrellaGroundSensor.IsTouchingGround; // MOD
+    
     private bool umbrellaActive;
     private bool attackUmbrellaActive;
     private bool dashActive;
@@ -71,6 +95,10 @@ public class characterUmbrella : MonoBehaviour
         {
             jumpScript = GetComponent<characterJump>();
         }
+        if (umbrellaGroundSensor == null) // MOD: 자동 검색(없으면 에디터에서 할당)
+        {
+            umbrellaGroundSensor = GetComponentInChildren<UmbrellaGround>();
+        }
         UpdateUmbrellaVisuals();
     }
 
@@ -99,14 +127,33 @@ public class characterUmbrella : MonoBehaviour
             attackUmbrellaObject.SetActive(attackUmbrellaActive);
         }
     }
+    
+    public bool CanDownPoseJump() // MOD: ↓우산 점프 가능?
+    {
+        return downPoseActive && IsUmbrellaTouchingGround && !downPoseJumpUsed;
+    }
+
+    public void MarkDownPoseJumpUsed() // MOD: 점프 1회 소모
+    {
+        downPoseJumpUsed = true;
+    }
 
     public void UpdateUmbrellaState(bool pressingJump, bool onGround, float deltaTime)
     {
-        // ↓-포즈일 땐 글라이드 절대 금지 + 느린낙하 클램프도 적용 안 함
+        // ↓우산일 때는 글라이드 금지
         if (downPoseActive)
         {
             umbrellaTimer = 0f;
             if (umbrellaActive) SetUmbrellaActive(false);
+
+            // MOD: 접지 전환 감지 → 닿는 순간마다 1회 점프 재충전
+            bool touching = IsUmbrellaTouchingGround;
+            if (touching && !prevTouching)
+            {
+                downPoseJumpUsed = false; // 새로 닿았으니 1회 충전
+            }
+            prevTouching = touching;
+
             return;
         }
 
@@ -147,45 +194,43 @@ public class characterUmbrella : MonoBehaviour
 
     public void BeginDownPose()
     {
-        // 글라이드/대시/공격 끄기 (느린 낙하 금지, 대시/공격 간섭 제거)
         SetUmbrellaActive(false);
         if (dashActive) StopDash();
-        // 공격을 강제 꺼야 한다면 다음 줄 주석 해제
-        // SetAttackUmbrellaActive(false);
-
-        // 처음 진입 + 지상일 때만 살짝 점프
         if (!downPoseActive && jumpScript != null && jumpScript.onGround)
         {
             PerformGroundedUmbrellaBoost();
         }
-
         downPoseActive = true;
-
-        // 아래 방향 비주얼을 켜고 자동으로 꺼지지 않게 유지
         ShowDashUmbrellaVisual(useDownVariant: true, autoHideDelay: 0f);
+
+        // ↓우산 진입 시 '첫 점프' 슈퍼점프 1회 충전
+        superJumpAvailable = true;
+
+        prevTouching = IsUmbrellaTouchingGround;
+        if (prevTouching) downPoseJumpUsed = false;
     }
 
     public void EndDownPose()
     {
         downPoseActive = false;
-
-        if (dashUmbrellaObject != null)
-            dashUmbrellaObject.SetActive(false);
-
-        // 글라이드는 꺼둔 상태 유지
+        if (dashUmbrellaObject != null) dashUmbrellaObject.SetActive(false);
         SetUmbrellaActive(false);
         UpdateUmbrellaVisuals();
+
+        // ↓우산 종료 시 슈퍼점프 초기화
+        superJumpAvailable = false;
+        downPoseJumpUsed = false;
+        prevTouching = false;
     }
-
-
+    
     public void NotifyGroundState(bool grounded)
     {
         if (grounded)
         {
-            airDashesUsed = 0; // 땅 밟으면 공중 대시 횟수 리셋
+            airDashesUsed = 0;
+            // ↓우산 점프 소모는 우산 끝 접지 기준이므로 여기서는 건드리지 않음
         }
     }
-
 
     public void ForceClose()
     {
@@ -230,21 +275,24 @@ public class characterUmbrella : MonoBehaviour
         }
     }
 
+    // 외부에서 구독 가능한 공격 이벤트(1회 입력당 1번만 쏨)
+    public event Action OnAttackFired;
+
     public bool TryTriggerAttackUmbrella()
     {
-        // 방어적 처리: ↓우산 중이면 먼저 끊기
         if (IsDownPoseActive)
             EndDownPose();
 
         if (umbrellaActive || dashActive)
-        {
             return false;
-        }
 
         SetAttackUmbrellaActive(true);
+
+        // ← 여기서 공격 이벤트 발사 (애니메이션 트리거와 동시에 한 번)
+        OnAttackFired?.Invoke();
+
         return true;
     }
-
 
     public void ReleaseAttackUmbrella()
     {
@@ -416,6 +464,17 @@ public class characterUmbrella : MonoBehaviour
                     currentVelocity = currentVelocity.normalized * dashVelocityClamp;
                     dashBody.linearVelocity = currentVelocity;
                 }
+            }
+        }
+
+        if (dashBody != null && aerialDashFallSpeedCap > 0f)
+        {
+            Vector2 v = dashBody.linearVelocity;
+            float cap = -Mathf.Abs(aerialDashFallSpeedCap);
+            if (v.y < cap)
+            {
+                v.y = cap;
+                dashBody.linearVelocity = v;
             }
         }
 
