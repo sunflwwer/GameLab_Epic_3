@@ -42,6 +42,9 @@ public class characterUmbrella : MonoBehaviour
     private bool umbrellaActive;
     private bool attackUmbrellaActive;
     private bool dashActive;
+    
+    private bool downPoseActive;                    // ↓-포즈(우산 아래 고정) 상태
+    public bool IsDownPoseActive => downPoseActive; // 외부 조회용
 
     [SerializeField, Tooltip("-1은 무제한, 0 이상은 허용 대시 수")]
     private int maxAirDashes = -1;
@@ -99,6 +102,14 @@ public class characterUmbrella : MonoBehaviour
 
     public void UpdateUmbrellaState(bool pressingJump, bool onGround, float deltaTime)
     {
+        // ↓-포즈일 땐 글라이드 절대 금지 + 느린낙하 클램프도 적용 안 함
+        if (downPoseActive)
+        {
+            umbrellaTimer = 0f;
+            if (umbrellaActive) SetUmbrellaActive(false);
+            return;
+        }
+
         bool shouldAccumulate = !onGround && pressingJump;
 
         if (attackUmbrellaActive)
@@ -111,14 +122,8 @@ public class characterUmbrella : MonoBehaviour
 
         if (dashActive)
         {
-            if (shouldAccumulate)
-            {
-                umbrellaTimer += deltaTime;
-            }
-            else
-            {
-                umbrellaTimer = 0f;
-            }
+            if (shouldAccumulate) umbrellaTimer += deltaTime;
+            else umbrellaTimer = 0f;
 
             SetUmbrellaActive(false);
             ClampGlideVelocityIfNeeded();
@@ -129,21 +134,49 @@ public class characterUmbrella : MonoBehaviour
         {
             umbrellaTimer += deltaTime;
             if (!umbrellaActive && umbrellaTimer >= activationDelay)
-            {
                 SetUmbrellaActive(true);
-            }
         }
         else
         {
             umbrellaTimer = 0f;
-            if (umbrellaActive)
-            {
-                SetUmbrellaActive(false);
-            }
+            if (umbrellaActive) SetUmbrellaActive(false);
         }
 
         ClampGlideVelocityIfNeeded();
     }
+
+    public void BeginDownPose()
+    {
+        // 글라이드/대시/공격 끄기 (느린 낙하 금지, 대시/공격 간섭 제거)
+        SetUmbrellaActive(false);
+        if (dashActive) StopDash();
+        // 공격을 강제 꺼야 한다면 다음 줄 주석 해제
+        // SetAttackUmbrellaActive(false);
+
+        // 처음 진입 + 지상일 때만 살짝 점프
+        if (!downPoseActive && jumpScript != null && jumpScript.onGround)
+        {
+            PerformGroundedUmbrellaBoost();
+        }
+
+        downPoseActive = true;
+
+        // 아래 방향 비주얼을 켜고 자동으로 꺼지지 않게 유지
+        ShowDashUmbrellaVisual(useDownVariant: true, autoHideDelay: 0f);
+    }
+
+    public void EndDownPose()
+    {
+        downPoseActive = false;
+
+        if (dashUmbrellaObject != null)
+            dashUmbrellaObject.SetActive(false);
+
+        // 글라이드는 꺼둔 상태 유지
+        SetUmbrellaActive(false);
+        UpdateUmbrellaVisuals();
+    }
+
 
     public void NotifyGroundState(bool grounded)
     {
@@ -157,6 +190,7 @@ public class characterUmbrella : MonoBehaviour
     public void ForceClose()
     {
         umbrellaTimer = 0f;
+        downPoseActive = false;   
         SetUmbrellaActive(false);
         SetAttackUmbrellaActive(false);
         StopDash();                 // 대시 상태/타이머 초기화
@@ -198,6 +232,10 @@ public class characterUmbrella : MonoBehaviour
 
     public bool TryTriggerAttackUmbrella()
     {
+        // 방어적 처리: ↓우산 중이면 먼저 끊기
+        if (IsDownPoseActive)
+            EndDownPose();
+
         if (umbrellaActive || dashActive)
         {
             return false;
@@ -206,6 +244,7 @@ public class characterUmbrella : MonoBehaviour
         SetAttackUmbrellaActive(true);
         return true;
     }
+
 
     public void ReleaseAttackUmbrella()
     {
@@ -418,12 +457,12 @@ public class characterUmbrella : MonoBehaviour
             return;
         }
 
-        // 일반 점프 입력 취소 및 일정 시간 동안 점프 블록 (동시 입력 방지)
+        // 초기 입력 정리만 하고, 점프는 차단하지 않는다
         jumpScript.desiredJump = false;
         jumpScript.jumpBufferCounter = 0f;
-        jumpScript.umbrellaBoostJumpBlocked = true;
-        jumpScript.umbrellaBoostJumpBlockTimer = 0.3f; // 0.3초 동안 일반 점프 차단
-
+        jumpScript.umbrellaBoostJumpBlocked = false;
+        jumpScript.umbrellaBoostJumpBlockTimer = 0f;
+        
         // 현재 Y 속도를 0으로 초기화 (바닥에서 시작하므로)
         Vector2 currentVelocity = jumpScript.body.linearVelocity;
         currentVelocity.y = 0f;

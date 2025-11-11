@@ -89,24 +89,43 @@ public class characterJump : MonoBehaviour
                 umbrellaController.ReleaseAttackUmbrella();
             }
             
-            // New logic for down-boost
-            if (onGround && umbrellaController != null && inputManager.moveInput.y < -0.5f && !downBoostUsedInThisPress)
+            // ↓ 홀드: 공격 중에는 ↓우산 재진입 금지
+            if (umbrellaController != null)
             {
-                // Use facing direction for the boost
-                float facingDir = Mathf.Sign(transform.localScale.x);
-                umbrellaController.TryStartDash(facingDir, onGround, body, true, false);
-                umbrellaDashConsumed = true; // Prevents regular jump
-                downBoostUsedInThisPress = true;
-            }
+                if (inputManager.moveInput.y < -0.5f)
+                {
+                    // 공격 중이면 ↓우산 시작하지 않음
+                    if (!umbrellaController.AttackUmbrellaActive)
+                    {
+                        if (!downBoostUsedInThisPress)
+                        {
+                            umbrellaController.BeginDownPose();   // 처음 한 번만 살짝 점프
+                            downBoostUsedInThisPress = true;
+                        }
+                        else
+                        {
+                            if (!umbrellaController.IsDownPoseActive)
+                                umbrellaController.BeginDownPose();
+                        }
+                    }
+                }
+                else
+                {
+                    if (umbrellaController.IsDownPoseActive)
+                        umbrellaController.EndDownPose();
 
-            if (inputManager.moveInput.y >= -0.5f)
-            {
-                downBoostUsedInThisPress = false;
-            }
+                    downBoostUsedInThisPress = false;
+                }
+            }   
 
+
+            // 좌클릭(공격) 입력: 먼저 ↓우산을 끊고 공격만 실행
             if (!swingLocked && umbrellaController != null && inputManager.ConsumeUmbrellaAction())
             {
-                umbrellaController.TryTriggerAttackUmbrella();
+                if (umbrellaController.IsDownPoseActive)
+                    umbrellaController.EndDownPose();           // ← 핵심: 아래우산 해제
+
+                umbrellaController.TryTriggerAttackUmbrella();  // 공격만
                 umbrellaActionConsumed = true;
             }
 
@@ -136,19 +155,31 @@ public class characterJump : MonoBehaviour
 
         umbrellaController?.UpdateUmbrellaState(pressingJump, onGround, Time.deltaTime);
 
-        // 점프 입력은 우산 대시/액션 처리 후에 처리 (우산 대시와 점프 중복 방지)
         if (inputManager != null && inputManager.ConsumeJumpInput())
         {
-            // 우산 대시나 액션이 이번 프레임에 실행되었으면 점프 입력 무시
             if (umbrellaDashConsumed || umbrellaActionConsumed)
             {
-                // Ignored
+                // 이번 프레임 우산 대시/액션을 이미 썼다면 점프 스킵
             }
-            else if (!umbrellaBoostJumpBlocked)
+            else
             {
-                desiredJump = true;
+                // ↓-포즈 중에도 점프가 되도록: 먼저 포즈 해제
+                // ↓-포즈 중에도 점프가 되도록: 먼저 포즈 해제
+                if (umbrellaController != null && umbrellaController.IsDownPoseActive)
+                {
+                    umbrellaController.EndDownPose();
+                }
+
+                // 지상이라면(혹시나) 부스트 블록 해제
+                if (onGround) umbrellaBoostJumpBlocked = false;
+
+                if (!umbrellaBoostJumpBlocked)
+                {
+                    desiredJump = true;
+                }
             }
         }
+
 
         // 우산 부스트 점프 블록 타이머 업데이트
         if (umbrellaBoostJumpBlocked)
