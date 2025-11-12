@@ -12,6 +12,7 @@ public class characterJump : MonoBehaviour
     [SerializeField] movementLimiter moveLimit;
     [SerializeField] characterInputManager inputManager;
     [SerializeField] private characterSwing swingController;
+    [SerializeField] private PlayerHookController hookController;
 
     [Header("Jumping Stats")]
     [SerializeField, Range(2f, 5.5f)][Tooltip("Maximum jump height")] public float jumpHeight = 7.3f;
@@ -64,7 +65,11 @@ public class characterJump : MonoBehaviour
         defaultGravityScale = 1f;
         if (swingController == null)
         {
+        }
             swingController = GetComponent<characterSwing>();
+        if (hookController == null)
+        {
+            hookController = GetComponent<PlayerHookController>();
         }
     }
 
@@ -78,19 +83,21 @@ public class characterJump : MonoBehaviour
         bool umbrellaDashConsumed = false;
 
         bool swingLocked = swingController != null && swingController.IsSwinging;
+        bool hookLocked = hookController != null && hookController.IsHooking;
 
         if (inputManager != null)
         {
             pressingJump = inputManager.isPressingJump;
             bool umbrellaActionHeld = inputManager.isUmbrellaActionHeld;
 
-            if (umbrellaController != null && swingLocked)
+            if (umbrellaController != null && (swingLocked || hookLocked))
             {
                 umbrellaController.ReleaseAttackUmbrella();
             }
             
             // 1) 좌클릭(공격)을 먼저 처리: ↓우산은 끊고 공격만 유지
-            if (!swingLocked && umbrellaController != null && inputManager.ConsumeUmbrellaAction())
+            // Hook 중이 아닐 때만 공격 가능
+            if (!swingLocked && !hookLocked && umbrellaController != null && inputManager.ConsumeUmbrellaAction())
             {
                 if (umbrellaController.IsDownPoseActive)
                     umbrellaController.EndDownPose();
@@ -117,8 +124,8 @@ public class characterJump : MonoBehaviour
                 }
             }
 
-            // Modified old dash logic
-            if (!swingLocked && umbrellaController != null && inputManager.ConsumeUmbrellaDash())
+            // Modified old dash logic - Hook 중에도 불가능
+            if (!swingLocked && !hookLocked && umbrellaController != null && inputManager.ConsumeUmbrellaDash())
             {
                 float facingDir = Mathf.Sign(transform.localScale.x);
                 float inputDir = Mathf.Abs(inputManager.moveInput.x) > 0.1f ? Mathf.Sign(inputManager.moveInput.x) : 0f;
@@ -326,10 +333,17 @@ public class characterJump : MonoBehaviour
             else
             {
                 bool dashActive = umbrellaController != null && umbrellaController.IsDashActive;
+                bool attackActive = umbrellaController != null && umbrellaController.AttackUmbrellaActive;
+                
                 if (dashActive)
                 {
                     // ▼ 공중 대시 중: 글라이드보다 약간 큰 배율로 천천히 하강
                     gravMultiplier = umbrellaController.DashFallGravityMultiplier;
+                }
+                else if (attackActive)
+                {
+                    // ▼ 공중 공격 중: 대시와 동일하게 천천히 하강
+                    gravMultiplier = umbrellaController.AttackFallGravityMultiplier;
                 }
                 else
                 {

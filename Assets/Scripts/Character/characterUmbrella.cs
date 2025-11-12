@@ -30,6 +30,16 @@ public class characterUmbrella : MonoBehaviour
     public float DashFallGravityMultiplier => aerialDashFallGravityMultiplier;
     public float DashFallSpeedCap => aerialDashFallSpeedCap;
     
+    // 공중 공격 중 낙하 제어
+    [Header("Attack Fall (Air)")]
+    [SerializeField, Tooltip("공중 공격 중 적용할 낙하 중력 배율(대시와 동일하게 설정 권장)")]
+    private float aerialAttackFallGravityMultiplier = 0.20f;
+    [SerializeField, Tooltip("공중 공격 중 최대 낙하 속도")]
+    private float aerialAttackFallSpeedCap = 4.0f;
+
+    public float AttackFallGravityMultiplier => aerialAttackFallGravityMultiplier;
+    public float AttackFallSpeedCap => aerialAttackFallSpeedCap;
+    
     [Header("Dash Settings")]
     [SerializeField, Tooltip("Animation delay before dash starts")] private float dashAnimationDelay = 0.12f;
     [SerializeField, Tooltip("Total time the umbrella dash lasts")] private float dashDuration = 0.35f;
@@ -283,8 +293,16 @@ public class characterUmbrella : MonoBehaviour
         if (IsDownPoseActive)
             EndDownPose();
 
-        if (umbrellaActive || dashActive)
+        // 대시 중에만 공격 불가 (글라이드 중에는 공격 가능하도록 변경)
+        if (dashActive)
             return false;
+
+        // 글라이드 중이면 글라이드 끄기
+        if (umbrellaActive)
+        {
+            SetUmbrellaActive(false);
+            umbrellaTimer = 0f;
+        }
 
         SetAttackUmbrellaActive(true);
 

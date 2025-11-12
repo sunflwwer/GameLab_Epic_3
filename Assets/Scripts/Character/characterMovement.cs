@@ -10,6 +10,7 @@ public class characterMovement : MonoBehaviour
     [SerializeField] movementLimiter moveLimit;
     [SerializeField] characterInputManager inputManager;
     [SerializeField] characterUmbrella umbrellaController;
+    [SerializeField] private PlayerHookController hookController;
     private Rigidbody2D body;
     characterGround ground;
 
@@ -53,6 +54,9 @@ public class characterMovement : MonoBehaviour
 
     private void Update()
     {
+        // Hook 중일 때 이동 차단
+        bool isHooking = hookController != null && hookController.IsHooking;
+        
         // 입력 무시 타이머 처리
         if (ignoreInput)
         {
@@ -63,7 +67,7 @@ public class characterMovement : MonoBehaviour
             }
         }
         
-        if (moveLimit.characterCanMove && inputManager != null)
+        if (moveLimit.characterCanMove && inputManager != null && !isHooking)
         {
             // 입력 무시 중이 아닐 때만 입력 적용
             if (!ignoreInput)
@@ -75,6 +79,11 @@ public class characterMovement : MonoBehaviour
             {
                 directionX = 0;
             }
+        }
+        else if (isHooking)
+        {
+            // Hook 중에는 이동 입력 완전히 차단
+            directionX = 0;
         }
 
         //Used to stop movement when the character is playing her death animation

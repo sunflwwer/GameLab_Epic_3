@@ -11,10 +11,10 @@ public class RequireDownUmbrellaOrDisable : MonoBehaviour
     private string playerTag = "Player";
     
     [SerializeField, Tooltip("비활성화 대신 파괴할지 여부")]
-    private bool destroyInstead = false;
+    private bool destroyInstead;
     
-    [SerializeField, Tooltip("비활성화/파괴 전 지연 시간(초)")]
-    private float disableDelay = 0f;
+    [SerializeField, Tooltip("비활성화/파괴 전 지연 시간(초) - 0이면 즉시")]
+    private float disableDelay;
     
     [Header("Optional Effects")]
     [SerializeField, Tooltip("비활성화 시 재생할 파티클 효과 (옵션)")]
@@ -28,7 +28,7 @@ public class RequireDownUmbrellaOrDisable : MonoBehaviour
     private bool debugLog = true;
     
     private AudioSource audioSource;
-    private bool isDisabling = false;
+    private bool isDisabling;
     
     private void Awake()
     {
@@ -67,22 +67,24 @@ public class RequireDownUmbrellaOrDisable : MonoBehaviour
             Debug.Log($"[RequireDownUmbrellaOrDisable] 플레이어 충돌 감지 - 아래 우산 활성화: {downUmbrellaActive}");
         }
         
-        // 아래 우산이 활성화되지 않았으면 오브젝트 비활성화
+        // 아래 우산이 활성화되지 않았으면 오브젝트 즉시 비활성화/파괴
         if (!downUmbrellaActive)
         {
             if (debugLog)
             {
-                Debug.Log($"[RequireDownUmbrellaOrDisable] 아래 우산 미활성화 상태로 충돌! '{gameObject.name}' 비활성화/파괴");
+                Debug.Log($"[RequireDownUmbrellaOrDisable] 아래 우산 미활성화 상태로 충돌! '{gameObject.name}' 즉시 비활성화/파괴");
             }
             
             isDisabling = true;
             
-            if (disableDelay > 0f)
+            // 지연 시간 체크 (기본 0 = 즉시)
+            if (disableDelay > 0.001f)
             {
                 Invoke(nameof(DisableOrDestroy), disableDelay);
             }
             else
             {
+                // 즉시 비활성화/파괴
                 DisableOrDestroy();
             }
         }
