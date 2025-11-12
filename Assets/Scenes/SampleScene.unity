@@ -17647,7 +17647,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6d8d52e9c07f45349d2e8ddf611c6b06, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  interactionRange: 1.5
+  interactionRange: 3
   player: {fileID: 18588590}
   umbrellaObject: {fileID: 764105418}
   targetUmbrellaX: 0.69

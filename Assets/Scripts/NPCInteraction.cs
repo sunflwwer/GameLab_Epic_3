@@ -73,6 +73,14 @@ public class NPCInteraction : MonoBehaviour
             if (playerObj != null)
             {
                 player = playerObj.transform;
+                if (debugLog)
+                {
+                    Debug.Log($"[NPCInteraction] 플레이어 찾음: {player.name}");
+                }
+            }
+            else if (debugLog)
+            {
+                Debug.LogError("[NPCInteraction] 플레이어를 찾을 수 없습니다! 'Player' 태그를 확인하세요.");
             }
         }
         
@@ -91,6 +99,11 @@ public class NPCInteraction : MonoBehaviour
                 playerMovementLimiter = player.GetComponent<movementLimiter>();
             if (playerRigidbody == null)
                 playerRigidbody = player.GetComponent<Rigidbody2D>();
+                
+            if (debugLog)
+            {
+                Debug.Log($"[NPCInteraction] 플레이어 컴포넌트 찾기 완료 - Movement:{playerMovement!=null}, Jump:{playerJump!=null}, Umbrella:{playerUmbrella!=null}");
+            }
         }
         
         // Collider를 Trigger로 설정
@@ -98,6 +111,14 @@ public class NPCInteraction : MonoBehaviour
         if (col != null)
         {
             col.isTrigger = true;
+            if (debugLog)
+            {
+                Debug.Log($"[NPCInteraction] Collider2D를 Trigger로 설정: {col.GetType().Name}");
+            }
+        }
+        else if (debugLog)
+        {
+            Debug.LogWarning("[NPCInteraction] Collider2D가 없습니다! NPC 오브젝트에 Collider2D를 추가하세요.");
         }
         
         // 상호작용 프롬프트 비활성화
@@ -126,11 +147,23 @@ public class NPCInteraction : MonoBehaviour
                 defaultCameraPriority = defaultCamera.Priority;
             }
         }
+        
+        if (debugLog)
+        {
+            Debug.Log($"[NPCInteraction] 초기화 완료 - 상호작용 범위: {interactionRange}m");
+        }
     }
     
     private void Update()
     {
-        if (isEnding) return;
+        if (isEnding)
+        {
+            if (debugLog && Input.GetMouseButtonDown(1))
+            {
+                Debug.Log("[NPCInteraction] 이미 엔딩 시퀀스 진행 중입니다.");
+            }
+            return;
+        }
         
         // 플레이어가 범위 내에 있는지 체크
         CheckPlayerInRange();
@@ -141,10 +174,30 @@ public class NPCInteraction : MonoBehaviour
             interactionPrompt.SetActive(isPlayerInRange);
         }
         
-        // 우클릭 입력 체크
-        if (isPlayerInRange && Input.GetMouseButtonDown(1))
+        // 우클릭 입력 체크 (항상 먼저 체크)
+        if (Input.GetMouseButtonDown(1))
         {
-            StartEndingSequence();
+            if (debugLog)
+            {
+                float distance2D = 0f;
+                if (player != null)
+                {
+                    Vector2 npcPos2D = new Vector2(transform.position.x, transform.position.y);
+                    Vector2 playerPos2D = new Vector2(player.position.x, player.position.y);
+                    distance2D = Vector2.Distance(npcPos2D, playerPos2D);
+                }
+                
+                Debug.Log($"[NPCInteraction] 우클릭 감지! 플레이어 범위 내: {isPlayerInRange}, 플레이어 존재: {player != null}, 2D 거리: {(player != null ? distance2D.ToString("F2") : "N/A")}m");
+            }
+            
+            if (isPlayerInRange)
+            {
+                StartEndingSequence();
+            }
+            else if (debugLog)
+            {
+                Debug.LogWarning($"[NPCInteraction] 플레이어가 범위 밖입니다. 필요 거리: {interactionRange}m");
+            }
         }
     }
     
@@ -152,7 +205,11 @@ public class NPCInteraction : MonoBehaviour
     {
         if (player == null) return;
         
-        float distance = Vector3.Distance(transform.position, player.position);
+        // 2D 게임이므로 Z축을 무시하고 XY 평면에서만 거리 측정
+        Vector2 npcPos2D = new Vector2(transform.position.x, transform.position.y);
+        Vector2 playerPos2D = new Vector2(player.position.x, player.position.y);
+        float distance = Vector2.Distance(npcPos2D, playerPos2D);
+        
         isPlayerInRange = distance <= interactionRange;
     }
     
@@ -267,7 +324,8 @@ public class NPCInteraction : MonoBehaviour
             playerUmbrella.enabled = false;
         }
         
-        // InputManager 비활성화
+        // InputManager는 나중에 비활성화 (상호작용 후에)
+        // 이렇게 하면 NPC 상호작용이 InputManager와 무관하게 작동
         if (playerInputManager != null)
         {
             playerInputManager.enabled = false;
